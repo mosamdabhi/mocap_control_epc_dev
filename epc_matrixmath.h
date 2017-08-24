@@ -96,6 +96,23 @@
     OUT ## _cols = IN ## _cols;    
 
 
+static void multMat(uint16_t L_rows, uint16_t L_cols,
+                    uint16_t R_cols, float* L, float* R, float* out, int8_t neg)
+{
+  for (uint16_t i=0; i<L_rows; i++)
+  {
+    for (uint16_t j=0; j<R_cols; j++)
+    {
+      // multiply row i of L by col j of R
+      out[i*R_cols+j] = 0;
+      for (uint16_t kk = 0; kk<L_cols; kk++)
+      {
+        out[i*R_cols+j] += neg * L[i*L_cols+kk] * R[kk*R_cols+j];
+      }
+    }
+  }
+}
+
 static void multMatTMat(uint16_t L_rows, uint16_t L_cols,
                         uint16_t R_cols,float* L, float* R,
                         float* out, int8_t neg)

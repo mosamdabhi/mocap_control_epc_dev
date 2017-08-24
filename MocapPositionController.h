@@ -205,8 +205,12 @@ private:
     //const loc_pos_t *pos
 
     //#if 0
-    if (!epc_obj.epc_logic(fd_w, pos, vel, cmd.pos, cmd.vel, mass))
+    if (!epc_obj.epc_logic(fd_w, pos, vel, cmd.pos, cmd.vel, cmd.acc, mass, gravity(2)))
     {
+        // World force in NED frame
+        fd_w =
+          (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;        
+
         printf("epc_logic is false\n");
     }   
     
@@ -215,10 +219,8 @@ private:
     //#endif
 
 
-    // World force in NED frame
-    fd_w =
-      (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;
 
+    // Confusion about this: Should we keep L1 Position Observe or not?
     // L1 Position Observe (provides world force error in NED frame)
     math::Vector<3> l1_fw = l1_pos_observer.update(R, vel, current_rpm_cmd);
 

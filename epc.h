@@ -45,6 +45,8 @@ CONSTRUCT_STATIC_MAT(C_BtQrc, N*NUM_CTRLS, 1, float);
 CONSTRUCT_STATIC_MAT(C_lam_a, N*NUM_CONSTR, 1, float);
 CONSTRUCT_STATIC_MAT(C_gam_offset, N*NUM_CONSTR, 1, float);
 
+CONSTRUCT_STATIC_MAT(C_E4, N*NUM_CTRLS, N*NUM_CTRLS, float);
+CONSTRUCT_STATIC_MAT(C_ctrl, N*NUM_CTRLS, 1, float);
 
 
 static bool init_epc = false;
@@ -150,6 +152,64 @@ static void multBQr()
   }
 }
 
+static int16_t failed_idx = -1;
+static float failed_constr = 0;
+
+static bool check_for_Constraints(math::Vector<3> &pos_for_checkConstraints,
+                                  math::Vector<3> &vel_for_checkConstraints)
+{
+  uint16_t i, row_idx, col_idx, kk, c_i;
+  bool meets_constraints = true;
+  for(i=0; i<N*NUM_CONSTR;i++)
+  {
+    float constr_lhs = 0;
+    float constr_rhs = C_gam[i];
+
+    if (i < 2*N*NUM_CONSTR_STATES)
+    {
+      int neg = -1;
+      if (i < N*NUM_CONSTR_STATES)
+        neg = 1;
+
+      // Implements Gx*x_0
+      if ((i%NUM_CONSTR_STATES)==0) constr_lhs += neg*vel_for_checkConstraints(0);
+      if ((i%NUM_CONSTR_STATES)==1) constr_lhs += neg*vel_for_checkConstraints(1);      
+
+      row_idx = i%NUM_CONSTR_STATES;
+      col_idx = N*NUM_CTRLS - ((i/NUM_CONSTR_STATES)%N)*NUM_CTRLS;
+
+      for (kk = 0; kk<C_GxB_cols-col_idx+NUM_CTRLS; kk++)
+      {
+        constr_lhs += neg * C_GxB[row_idx*C_GxB_cols+kk] * C_ctrl[kk];
+      }      
+    }
+    else
+    {
+      c_i = (i - 2*N*NUM_CONSTR_STATES)%(N*NUM_CTRLS);
+      constr_lhs = C_ctrl[c_i];
+      if (i >= N*NUM_CONSTR_STATES + N*NUM_CTRLS)
+      {
+        constr_lhs = -constr_lhs;
+      }      
+    }
+
+
+    if ( (constr_lhs - constr_rhs) > 1e-2f )
+    {
+      meets_constraints = false;
+      failed_idx = i;
+      failed_constr = constr_lhs;
+      break;    
+    }
+    else
+    {
+      failed_idx = -1;
+      failed_constr = 0;
+    }
+  }
+  return meets_constraints;
+}
+
 class epc
 {
 public:
@@ -192,13 +252,13 @@ public:
 	//bool epc_logic(struct vec* force_world, float g_vehicleMass)
 	// Change this to pointer based logic
 	bool epc_logic(math::Vector<3> &world_force, math::Vector<3> &pos_, math::Vector<3> &vel_, 
-					math::Vector<3> &cmd_pos_, math::Vector<3> &cmd_vel_,  float g_vehicleMass)
+					math::Vector<3> &cmd_pos_, math::Vector<3> &cmd_vel_, math::Vector<3> &cmd_acc_, float g_vehicleMass, float GRAV)
 	{
 		//printf("H_inv is: %3.6f\n", double(C_Hinv[899]));
 		//printf("C_affine_c is %f\n", double(C_affine_c[0]));
 		//printf("E1 is %f\n", double(C_E1[0]));
 
-		//bool ctrl_set = false;
+    bool ctrl_set = false;
 
 	#if 0
     printf("local position inside x: %3.4f y: %3.4f z: %3.4f\n",
@@ -277,11 +337,52 @@ public:
         //printf("C_lam_a_rows ismis: %3.4f\n", double(C_lam_a_rows));
         
 
+        ///////////////////////////////////////////     NEW PART : 8/24/2017 | 1351 EST
+        if ( C_lam_a_rows > 0 )
+        {
+            COPY_MATRIX(C_Hinv, C_E4)
+            MAC_MATRIX(C_E4, C_E3, C_E1)
+
+            MULTIPLYING_MATRIX(C_E4, C_BtQrc, C_ctrl)
+            MAC_NEGATE_MATRIX(C_ctrl, C_E3, C_gam_offset)
+        }
+        else
+        {
+            instantiate_r_minus_c(pos_, vel_, cmd_pos_, cmd_vel_);
+            MULTIPLYING_MATRIX(C_Hinv, C_BtQrc, C_ctrl)
+        }
+
+        // Checking that all the constraints are met
+        if(check_for_Constraints(pos_, vel_))
+        {
+            ctrl_set = true;
+            curr_id = s_idx;            
+
+            for (uint16_t i=0; i<5; i++)
+              ctrl_use[i] = ctrl_use[i+1];
+
+            static float itr = 0;
+            ctrl_use[5] = ((float)curr_id)*100;
+            ctrl_use[5] += (++itr)*1e-6f;                          
+            break;
+        }
 		}
+
+
+    if(ctrl_set)
+    {
+      //#if 0
+        world_force(0) = g_vehicleMass * cmd_acc_(0) + C_ctrl[0];
+        world_force(1) = g_vehicleMass * cmd_acc_(1) + C_ctrl[1];
+        world_force(2) = g_vehicleMass * (cmd_acc_(2) + GRAV) + C_ctrl[2];
+      //#endif
+
+        printf("Got the control input\n");
+        return true;
+    }
+    else
+      return false;
 		
-
-
-		return false;
 	}
 
 };
