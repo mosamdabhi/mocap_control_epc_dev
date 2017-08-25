@@ -309,7 +309,7 @@ public:
 
           MAC_MATRIX(C_lam_a, C_E2, C_gam_offset)
           //printf("Still loop here?\n");
-          printf("cal_r aew: %3.4f\n", double(C_r_minus_c[0]));
+          //printf("cal_r aew: %3.4f\n", double(C_r_minus_c[0]));
 		    }
         else
         {
@@ -377,7 +377,7 @@ public:
         world_force(2) = g_vehicleMass * (cmd_acc_(2) + GRAV) + C_ctrl[2];
       //#endif
 
-        printf("Got the control input\n");
+        //printf("Got the control input\n");
         return true;
     }
     else

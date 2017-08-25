@@ -185,10 +185,12 @@ private:
     math::Vector<3> e_pos = pos - cmd.pos;
     math::Vector<3> e_vel = vel - cmd.vel;
 
+    #if 0
      printf("got local position x: %3.4f y: %3.4f z: %3.4f\n",
           (double) pos(0),
           (double) pos(1),
           (double) pos(2)); 
+    #endif          
 
     math::Vector<3> fd_w;
 
@@ -204,19 +206,19 @@ private:
     static epc epc_obj;
     //const loc_pos_t *pos
 
-    //#if 0
     if (!epc_obj.epc_logic(fd_w, pos, vel, cmd.pos, cmd.vel, cmd.acc, mass, gravity(2)))
     {
         // World force in NED frame
         fd_w =
-          (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;        
+          (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
 
         printf("epc_logic is false\n");
     }   
     
 
 
-    //#endif
+printf("fd_w x: %3.4f\n", double(fd_w(0)));
+
 
 
 
