@@ -8,6 +8,10 @@ void initEPCMats();
 
 #include "epc_matrixmath.h"
 
+#define GAMMAVECTOR_ROWS(IDXS) \
+    getCgamRows(IDXS ## _rows, IDXS); \
+    C_gam_offset_rows = IDXS ## _rows;
+
 #define MULT_GAMMAROW_MATRIX(ROWS, R, OUT) \
     multGamRowsMat(ROWS ## _rows, ROWS, R ## _cols, R, OUT); \
     OUT ## _rows = ROWS ## _rows; \
@@ -45,11 +49,38 @@ CONSTRUCT_STATIC_MAT(C_BtQrc, N*NUM_CTRLS, 1, float);
 CONSTRUCT_STATIC_MAT(C_lam_a, N*NUM_CONSTR, 1, float);
 CONSTRUCT_STATIC_MAT(C_gam_offset, N*NUM_CONSTR, 1, float);
 
+CONSTRUCT_STATIC_MAT(C_E4, N*NUM_CTRLS, N*NUM_CTRLS, float);
+CONSTRUCT_STATIC_MAT(C_ctrl, N*NUM_CTRLS, 1, float);
 
 
 static bool init_epc = false;
 static uint16_t curr_id;
 static float ctrl_use[6];
+
+static void getCgamRows(uint16_t num_rows, uint16_t* rows)
+{
+  uint16_t rows_i, idx;
+  for (uint16_t i=0; i<num_rows; i++)
+  {
+    rows_i = rows[i];
+    if (rows_i < 2*N*NUM_CONSTR_STATES)
+    {
+      idx = rows_i%NUM_CONSTR_STATES;
+      if (rows_i >= N*NUM_CONSTR_STATES)
+        idx += NUM_CONSTR_STATES;
+    }
+    else
+    {
+      rows_i -= 2*N*NUM_CONSTR_STATES;
+      idx = rows_i%NUM_CTRLS + 2*NUM_CONSTR_STATES;
+      if (rows_i >= N*NUM_CTRLS)
+        idx += NUM_CTRLS;
+//       std::cout << rows[i] << ", " << (int)rows_i << ", " << (int)idx << std::endl;
+    }
+    C_gam_offset[i] = C_gam[idx];
+//     DEBUG_PRINT("%f\n",C_gam[idx]-C_gam[ rows[i] ]);
+  }
+}
 
 static void multGamRowsMat(uint16_t num_rows, uint16_t* rows,
                            uint16_t R_cols, float* R, float* out)
@@ -140,7 +171,7 @@ static void multBQr()
     col_idx = ((i/NUM_CTRLS)%N)*NUM_STATES;
 
     if (i % 3 == 2)
-      C_BtQrc[i] = 0.183054852; // NOTE: R*u_nom in z (u_nom = m*g)
+      C_BtQrc[i] = 0.3096; // NOTE: R*u_nom in z (u_nom = m*g)
     else
       C_BtQrc[i] = 0;
     for (kk = 0; kk<(N*NUM_STATES - col_idx); kk++)
@@ -148,6 +179,77 @@ static void multBQr()
       C_BtQrc[i] += C_BtQrow[row_idx*C_BtQrow_cols+kk] * C_r_minus_c[col_idx+kk];
     }
   }
+}
+
+static int16_t failed_idx = -1;
+static float failed_constr = 0;
+
+static bool check_for_Constraints(math::Vector<3> &pos_for_checkConstraints,
+                                  math::Vector<3> &vel_for_checkConstraints)
+{
+  uint16_t i, row_idx, col_idx, kk, c_i;
+  bool meets_constraints = true;
+  for(i=0; i<N*NUM_CONSTR;i++)
+  {
+    float constr_lhs = 0;
+    float constr_rhs; // = C_gam[i];
+
+    if (i < 2*N*NUM_CONSTR_STATES)
+    {
+
+      row_idx = i%NUM_CONSTR_STATES;
+      col_idx = N*NUM_CTRLS - ((i/NUM_CONSTR_STATES)%N)*NUM_CTRLS;      
+
+      int neg = -1;
+      if (i < N*NUM_CONSTR_STATES)
+      {
+        constr_rhs = C_gam[row_idx];
+        neg = 1;
+      }
+      else
+      {
+        constr_rhs = C_gam[row_idx+NUM_CONSTR_STATES];
+      }
+
+      // Implements Gx*x_0
+      if ((i%NUM_CONSTR_STATES)==0) constr_lhs += neg*vel_for_checkConstraints(0);
+      if ((i%NUM_CONSTR_STATES)==1) constr_lhs += neg*vel_for_checkConstraints(1);      
+
+
+      for (kk = 0; kk<C_GxB_cols-col_idx+NUM_CTRLS; kk++)
+      {
+        constr_lhs += neg * C_GxB[row_idx*C_GxB_cols+kk] * C_ctrl[kk];
+      }      
+    }
+    else
+    {
+      c_i = (i - 2*N*NUM_CONSTR_STATES)%(N*NUM_CTRLS);
+      constr_lhs = C_ctrl[c_i];
+
+      row_idx = 2*NUM_CONSTR_STATES + (i-2*N*NUM_CONSTR_STATES)%(NUM_CTRLS);
+      if (i >= 2*N*NUM_CONSTR_STATES + N*NUM_CTRLS)
+      {
+        constr_lhs = -constr_lhs;
+        row_idx += NUM_CTRLS;
+      }
+      constr_rhs = C_gam[row_idx];
+    }
+
+
+    if ( (constr_lhs - constr_rhs) > 1e-2f )
+    {
+      meets_constraints = false;
+      failed_idx = i;
+      failed_constr = constr_lhs;
+      break;    
+    }
+    else
+    {
+      failed_idx = -1;
+      failed_constr = 0;
+    }
+  }
+  return meets_constraints;
 }
 
 class epc
@@ -192,13 +294,13 @@ public:
 	//bool epc_logic(struct vec* force_world, float g_vehicleMass)
 	// Change this to pointer based logic
 	bool epc_logic(math::Vector<3> &world_force, math::Vector<3> &pos_, math::Vector<3> &vel_, 
-					math::Vector<3> &cmd_pos_, math::Vector<3> &cmd_vel_,  float g_vehicleMass)
+					math::Vector<3> &cmd_pos_, math::Vector<3> &cmd_vel_, math::Vector<3> &cmd_acc_, float g_vehicleMass, float GRAV)
 	{
 		//printf("H_inv is: %3.6f\n", double(C_Hinv[899]));
 		//printf("C_affine_c is %f\n", double(C_affine_c[0]));
 		//printf("E1 is %f\n", double(C_E1[0]));
 
-		//bool ctrl_set = false;
+    bool ctrl_set = false;
 
 	#if 0
     printf("local position inside x: %3.4f y: %3.4f z: %3.4f\n",
@@ -233,7 +335,9 @@ public:
           instantiate_r_minus_c(pos_, vel_, cmd_pos_, cmd_vel_);
           MULT_NEGATE_MATRIX_TRANSPOSED_MATRIX(C_E3, C_BtQrc, C_lam_a)
 
-          MATRIX_ROWS(C_gam, C_gam_offset, C_idxs)
+          GAMMAVECTOR_ROWS(C_idxs);
+
+          //MATRIX_ROWS(C_gam, C_gam_offset, C_idxs)
 
 
           // Implements Gx*x_0
@@ -249,7 +353,7 @@ public:
 
           MAC_MATRIX(C_lam_a, C_E2, C_gam_offset)
           //printf("Still loop here?\n");
-          printf("cal_r aew: %3.4f\n", double(C_r_minus_c[0]));
+          //printf("cal_r aew: %3.4f\n", double(C_r_minus_c[0]));
 		    }
         else
         {
@@ -277,11 +381,52 @@ public:
         //printf("C_lam_a_rows ismis: %3.4f\n", double(C_lam_a_rows));
         
 
+        ///////////////////////////////////////////     NEW PART : 8/24/2017 | 1351 EST
+        if ( C_lam_a_rows > 0 )
+        {
+            COPY_MATRIX(C_Hinv, C_E4)
+            MAC_MATRIX(C_E4, C_E3, C_E1)
+
+            MULTIPLYING_MATRIX(C_E4, C_BtQrc, C_ctrl)
+            MAC_NEGATE_MATRIX(C_ctrl, C_E3, C_gam_offset)
+        }
+        else
+        {
+            instantiate_r_minus_c(pos_, vel_, cmd_pos_, cmd_vel_);
+            MULTIPLYING_MATRIX(C_Hinv, C_BtQrc, C_ctrl)
+        }
+
+        // Checking that all the constraints are met
+        if(check_for_Constraints(pos_, vel_))
+        {
+            ctrl_set = true;
+            curr_id = s_idx;            
+
+            for (uint16_t i=0; i<5; i++)
+              ctrl_use[i] = ctrl_use[i+1];
+
+            static float itr = 0;
+            ctrl_use[5] = ((float)curr_id)*100;
+            ctrl_use[5] += (++itr)*1e-6f;                          
+            break;
+        }
 		}
+
+
+    if(ctrl_set)
+    {
+      //#if 0
+        world_force(0) = g_vehicleMass * cmd_acc_(0) + C_ctrl[0];
+        world_force(1) = g_vehicleMass * cmd_acc_(1) + C_ctrl[1];
+        world_force(2) = g_vehicleMass * (cmd_acc_(2) + GRAV) + C_ctrl[2];
+      //#endif
+
+        //printf("Got the control input\n");
+        return true;
+    }
+    else
+      return false;
 		
-
-
-		return false;
 	}
 
 };

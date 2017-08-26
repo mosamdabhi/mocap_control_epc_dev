@@ -90,11 +90,30 @@
 
 /* Extracting Rows of Matrices */
 /* OUT = IN([ROWS]) */
+#if 0    
 #define MATRIX_ROWS(IN,OUT,ROWS) \
     getMatRows(IN ## _cols, IN, OUT, ROWS ## _rows, ROWS); \
     OUT ## _rows = ROWS ## _rows; \
     OUT ## _cols = IN ## _cols;    
+#endif    
 
+
+static void multMat(uint16_t L_rows, uint16_t L_cols,
+                    uint16_t R_cols, float* L, float* R, float* out, int8_t neg)
+{
+  for (uint16_t i=0; i<L_rows; i++)
+  {
+    for (uint16_t j=0; j<R_cols; j++)
+    {
+      // multiply row i of L by col j of R
+      out[i*R_cols+j] = 0;
+      for (uint16_t kk = 0; kk<L_cols; kk++)
+      {
+        out[i*R_cols+j] += neg * L[i*L_cols+kk] * R[kk*R_cols+j];
+      }
+    }
+  }
+}
 
 static void multMatTMat(uint16_t L_rows, uint16_t L_cols,
                         uint16_t R_cols,float* L, float* R,
@@ -130,6 +149,7 @@ static void macMat(uint16_t L_rows, uint16_t L_cols, uint16_t R_cols,
   }
 }
 
+#if 0
 static void getMatRows(uint16_t in_cols, float* in, float*  out,
                        uint16_t num_rows, uint16_t* rows)
 {
@@ -141,3 +161,4 @@ static void getMatRows(uint16_t in_cols, float* in, float*  out,
     }
   }
 }
+#endif
