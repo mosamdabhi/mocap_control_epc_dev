@@ -202,7 +202,7 @@ private:
     #endif
 
     //struct vec *force_world;
-
+    //#if 0
     static epc epc_obj;
     //const loc_pos_t *pos
 
@@ -214,7 +214,12 @@ private:
 
         printf("epc_logic is false\n");
     }   
-    
+    //#endif
+
+    /*
+    fd_w =
+      (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
+    */
 
 
 printf("fd_w x: %3.4f\n", double(fd_w(0)));

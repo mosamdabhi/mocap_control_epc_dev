@@ -8,6 +8,10 @@ void initEPCMats();
 
 #include "epc_matrixmath.h"
 
+#define GAMMAVECTOR_ROWS(IDXS) \
+    getCgamRows(IDXS ## _rows, IDXS); \
+    C_gam_offset_rows = IDXS ## _rows;
+
 #define MULT_GAMMAROW_MATRIX(ROWS, R, OUT) \
     multGamRowsMat(ROWS ## _rows, ROWS, R ## _cols, R, OUT); \
     OUT ## _rows = ROWS ## _rows; \
@@ -52,6 +56,31 @@ CONSTRUCT_STATIC_MAT(C_ctrl, N*NUM_CTRLS, 1, float);
 static bool init_epc = false;
 static uint16_t curr_id;
 static float ctrl_use[6];
+
+static void getCgamRows(uint16_t num_rows, uint16_t* rows)
+{
+  uint16_t rows_i, idx;
+  for (uint16_t i=0; i<num_rows; i++)
+  {
+    rows_i = rows[i];
+    if (rows_i < 2*N*NUM_CONSTR_STATES)
+    {
+      idx = rows_i%NUM_CONSTR_STATES;
+      if (rows_i >= N*NUM_CONSTR_STATES)
+        idx += NUM_CONSTR_STATES;
+    }
+    else
+    {
+      rows_i -= 2*N*NUM_CONSTR_STATES;
+      idx = rows_i%NUM_CTRLS + 2*NUM_CONSTR_STATES;
+      if (rows_i >= N*NUM_CTRLS)
+        idx += NUM_CTRLS;
+//       std::cout << rows[i] << ", " << (int)rows_i << ", " << (int)idx << std::endl;
+    }
+    C_gam_offset[i] = C_gam[idx];
+//     DEBUG_PRINT("%f\n",C_gam[idx]-C_gam[ rows[i] ]);
+  }
+}
 
 static void multGamRowsMat(uint16_t num_rows, uint16_t* rows,
                            uint16_t R_cols, float* R, float* out)
@@ -142,7 +171,7 @@ static void multBQr()
     col_idx = ((i/NUM_CTRLS)%N)*NUM_STATES;
 
     if (i % 3 == 2)
-      C_BtQrc[i] = 0.183054852; // NOTE: R*u_nom in z (u_nom = m*g)
+      C_BtQrc[i] = 0.3096; // NOTE: R*u_nom in z (u_nom = m*g)
     else
       C_BtQrc[i] = 0;
     for (kk = 0; kk<(N*NUM_STATES - col_idx); kk++)
@@ -163,20 +192,29 @@ static bool check_for_Constraints(math::Vector<3> &pos_for_checkConstraints,
   for(i=0; i<N*NUM_CONSTR;i++)
   {
     float constr_lhs = 0;
-    float constr_rhs = C_gam[i];
+    float constr_rhs; // = C_gam[i];
 
     if (i < 2*N*NUM_CONSTR_STATES)
     {
+
+      row_idx = i%NUM_CONSTR_STATES;
+      col_idx = N*NUM_CTRLS - ((i/NUM_CONSTR_STATES)%N)*NUM_CTRLS;      
+
       int neg = -1;
       if (i < N*NUM_CONSTR_STATES)
+      {
+        constr_rhs = C_gam[row_idx];
         neg = 1;
+      }
+      else
+      {
+        constr_rhs = C_gam[row_idx+NUM_CONSTR_STATES];
+      }
 
       // Implements Gx*x_0
       if ((i%NUM_CONSTR_STATES)==0) constr_lhs += neg*vel_for_checkConstraints(0);
       if ((i%NUM_CONSTR_STATES)==1) constr_lhs += neg*vel_for_checkConstraints(1);      
 
-      row_idx = i%NUM_CONSTR_STATES;
-      col_idx = N*NUM_CTRLS - ((i/NUM_CONSTR_STATES)%N)*NUM_CTRLS;
 
       for (kk = 0; kk<C_GxB_cols-col_idx+NUM_CTRLS; kk++)
       {
@@ -187,10 +225,14 @@ static bool check_for_Constraints(math::Vector<3> &pos_for_checkConstraints,
     {
       c_i = (i - 2*N*NUM_CONSTR_STATES)%(N*NUM_CTRLS);
       constr_lhs = C_ctrl[c_i];
-      if (i >= N*NUM_CONSTR_STATES + N*NUM_CTRLS)
+
+      row_idx = 2*NUM_CONSTR_STATES + (i-2*N*NUM_CONSTR_STATES)%(NUM_CTRLS);
+      if (i >= 2*N*NUM_CONSTR_STATES + N*NUM_CTRLS)
       {
         constr_lhs = -constr_lhs;
-      }      
+        row_idx += NUM_CTRLS;
+      }
+      constr_rhs = C_gam[row_idx];
     }
 
 
@@ -293,7 +335,9 @@ public:
           instantiate_r_minus_c(pos_, vel_, cmd_pos_, cmd_vel_);
           MULT_NEGATE_MATRIX_TRANSPOSED_MATRIX(C_E3, C_BtQrc, C_lam_a)
 
-          MATRIX_ROWS(C_gam, C_gam_offset, C_idxs)
+          GAMMAVECTOR_ROWS(C_idxs);
+
+          //MATRIX_ROWS(C_gam, C_gam_offset, C_idxs)
 
 
           // Implements Gx*x_0
