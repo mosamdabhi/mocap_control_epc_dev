@@ -58,10 +58,31 @@ private:
 
   int pwm_rate;
 
-  // Voltage compensation
-  float rpm_coeff;
-  float voltage_coeff;
-  float affine_coeff;
   float current_voltage;
+  float p00;
+  float p10;
+  float p01;
+  float p20;
+  float p11;
+  float p02;
+  float p30;
+  float p21;
+  float p12;
+  float p03;
+  float p40;
+  float p31;
+  float p22;
+  float p13;
+  float p04;
+  float p50;
+  float p41;
+  float p32;
+  float p23;
+  float p14;
+  float p05;
+  float RPM_mean;
+  float RPM_sd;
+  float battery_voltage_mean;
+  float battery_voltage_sd;
 };
 #endif
