@@ -50,13 +50,9 @@ void PWMInterface::printCommand(const pwm_cmd_t& p)
   printf("[PWMInterface] current voltage = %s\n", buf);
 }
 
-unsigned short PWMInterface::convertRPMToPWM(float rpm)
+unsigned short PWMInterface::convertRPMToPWMVoltageCompensation(float rpm)
 {
-  float t = rpm_coeff*rpm + affine_coeff;
-
-  if (!rpm_control)
-    t += voltage_coeff*current_voltage;
-
+  float t = voltage_coeff*current_voltage + rpm_coeff*rpm + affine_coeff;
   if (t < 0.0f) t = 0.0f;
   return saturatePWMCommand((unsigned short)roundf(t));
 }
@@ -124,8 +120,6 @@ bool PWMInterface::sendCommand(const pwm_cmd_t& cmd)
 
 bool PWMInterface::loadParameters()
 {
-  rpm_control = static_cast<bool>(pu::getIntParam("MCC_MOT_RPM_CTRL"));
-
   // Use the values associated with main
   pwm_zero = pu::getUShortParam("PWM_AUX_DISARMED");
   pwm_min = pu::getUShortParam("PWM_AUX_MIN");
@@ -185,18 +179,12 @@ void PWMInterface::printParameters()
 
   // Hack to deal with NuttX printf of float/double values
   char buf[32];
-
-  if (rpm_control)
-    puts("[PWMInterface] RPM Control Enabled");
-  else
-  {
-    sprintf(buf, "%0.2f", (double)voltage_coeff);
-    printf("[PWMInterface] voltage_coeff = %s\n", buf);
-    memset(buf, 0, sizeof(buf));
-  }
-
   sprintf(buf, "%0.2f", (double)rpm_coeff);
   printf("[PWMInterface] rpm_coeff = %s\n", buf);
+  memset(buf, 0, sizeof(buf));
+
+  sprintf(buf, "%0.2f", (double)voltage_coeff);
+  printf("[PWMInterface] voltage_coeff = %s\n", buf);
   memset(buf, 0, sizeof(buf));
 
   sprintf(buf, "%0.2f", (double)affine_coeff);

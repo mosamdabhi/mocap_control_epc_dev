@@ -8,15 +8,40 @@
 #include <drivers/drv_hrt.h>
 #include <uORB/topics/mocap_position_command.h>
 #include <uORB/topics/mocap_position_command_gains.h>
+#include <time.h>
+//#include "math3d.h"
+#include "c_matrixmath.h"
+
+
+/*
+#include <px4_eigen.h>
+#include <unistd.h>
+#include <string>
+#include <sstream>
+#include <vector> 
+#include <stdio.h>
+#include <stdint.h>
+*/
 
 #include "ParameterUtils.h"
 #include "L1PositionObserver.h"
 
-#include "epc_matrixmath.h"
-#include "epc.h"
+//#define MILLION  1000000L;
+/*
+static uint16_t curr_id;
+  //static uint32_t ctr = 0;
+static bool init_epc = false;
 
+static float ctrl_use[6];  
+  struct Element
+  {
+    uint16_t id;
+    uint16_t active_set_size;
+    uint16_t* active_set;
+  };
+#include "c_epc_autogen.h"
 
-
+*/
 class MocapPositionController
 {
 public:
@@ -128,6 +153,13 @@ private:
     mass = parameter_utils::getFloatParam("MCC_TOTAL_MASS");
     gravity(2) = parameter_utils::getFloatParam("MCC_GRAVITY");
 
+  /*  dt_ = parameter_utils::getFloatParam("DT_");  // PARAMETER OF DT_
+    // int values
+    HORIZON_LENGTH = parameter_utils::getIntParam("HORIZON_LENGTH");
+    NUM_STATES = parameter_utils::getIntParam("NUM_STATES");
+    NUM_INPUTS = parameter_utils::getIntParam("NUM_INPUTS");
+  */
+
     return true;
   }
 
@@ -156,9 +188,357 @@ private:
 
     return true;
   }
+/*
+void initEPCMats()
+  {
+    initDatabase();
 
+    curr_id = 0;
+
+    for (uint16_t i=0; i<6; i++)
+      ctrl_use[i] = 0;
+
+    init_epc = true;
+  }  
+  Eigen::MatrixXf blkdiag(const Eigen::MatrixXf& a, int count)
+  {
+      Eigen::MatrixXf bdm = Eigen::MatrixXf::Zero(a.rows() * count, a.cols() * count);
+      for (int i = 0; i < count; ++i)
+      {
+          bdm.block(i * a.rows(), i * a.cols(), a.rows(), a.cols()) = a;
+      }
+
+      return bdm;
+  }
+
+  bool isGreaterThanZero(Eigen::MatrixXf& Z)
+  {
+    bool check = true;
+    for (int lam_var=0; lam_var < Z.size(); lam_var++)
+    {
+      if (Z(lam_var) <= 0)
+      {
+        check = false;
+        break;
+      }                 
+    }
+    return check; 
+  }
+
+
+  bool isEmpty(Eigen::MatrixXf& Z)
+  {
+     bool check = true;
+     for (int row(0); row < Z.rows(); ++row)
+      for (int col(0); col < Z.cols(); ++col){
+          if ( abs(Z(row,col)) > 1e-8){
+              check = false;
+              break;
+          }
+       }
+     return check;
+  }  
+
+*/
+/*
+  Eigen::Vector3f cov(float dt_for_func, float mass_for_func, const int HORIZON_LENGTH_for_func, const int NUM_STATES_for_func, const int NUM_INPUTS_for_func, const Eigen::Vector3f& e_pos, const Eigen::Vector3f& e_vel)
+  { 
+
+
+    struct timespec start, stop;
+    double accum;
+
+    if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {
+      perror( "clock gettime" );
+      exit( EXIT_FAILURE );
+    }
+
+   
+    printf("Entering EPC logic\n"); 
+
+
+    // Keeeping testing debug values of e_pos and e_vel as of now
+    //Vector3f e_pos_here = Vector3f::Zero(3);
+    //e_pos_here << 0.9f,0.0f,0.0f;
+    
+    //Vector3f e_vel_here = Vector3f::Zero(3);  
+
+    // Desired state values. // Would be obtained in PositionController.h // Taking random values initially
+    Eigen::VectorXf cal_r_temp(e_pos.rows() + e_vel.rows()); // Concatenating vertically
+    cal_r_temp << e_pos,e_vel;
+    Eigen::VectorXf cal_r = cal_r_temp.replicate(HORIZON_LENGTH_for_func, 1);
+
+    Eigen::MatrixXf c_temp(6,1), cal_c;
+    c_temp << 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f;   // Desired Pos_x | Desired Pos_y | Desired Pos_z | Desired Vel_x | Desired Vel_y | Desired Vel_z 
+    cal_c = c_temp.replicate(HORIZON_LENGTH_for_func, 1);     
+
+    // Creating cal_Q
+    // Taking the Q values from Vishnu's script matching the PD Gains for danaus quads for N=2
+    Eigen::VectorXf Q_tmp(NUM_STATES_for_func);
+    Q_tmp << 75.340570f, 75.340570f, 74.654191f, 0.281723f, 0.281723f, 74.496852f; // This is for N=2
+    //Q_tmp <<  44.911248, 44.911248, 78.319160, 0.758221, 0.758221, 1.625917; // for N=10
+    Eigen::MatrixXf Q1 = Q_tmp.asDiagonal();
+    Eigen::MatrixXf cal_Q = blkdiag(Q1,HORIZON_LENGTH_for_func);    
+
+    
+    // Creating cal_R
+    // Taking the R values from Vishnu's script matching the PD Gains for danaus quads for N=2
+    Eigen::Vector3f R_tmp(0.001306f, 0.001306f, 0.233827f);  // FOR N=2
+    //Vector3f R_tmp(0.017063, 0.017063, 0.023259); // FOR N=10
+    Eigen::Matrix3f R1 = R_tmp.asDiagonal();
+    Eigen::MatrixXf cal_R = blkdiag(R1,HORIZON_LENGTH);     
+
+    Eigen::MatrixXf A_discrete(6,6);
+      A_discrete << 1.0f, 0.0f, 0.0f, 0.01f, 0.0f, 0.0f,
+                    0.0f, 1.0f, 0.0f, 0.0f, 0.01f, 0.0f,
+                    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.01f,
+                    0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                    0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f;
+
+    Eigen::MatrixXf B_discrete(6,3);
+      B_discrete << 6.30517e-05f, 0.0f, 0.0f,
+                    0.0f, 6.30517e-05f, 0.0f,
+                    0.0f, 0.0f, 6.30517e-05f,
+                    0.0126103f, 0.0f, 0.0f,
+                    0.0f, 0.0126103f, 0.0f,
+                    0.0f, 0.0f, 0.0126103f;
+    // Creating cal_B
+    Eigen::MatrixXf Z_for_cal_B = Eigen::MatrixXf::Zero(6,3);
+
+
+    Eigen::MatrixXf cal_B = Eigen::MatrixXf::Zero(HORIZON_LENGTH_for_func*6,(6*HORIZON_LENGTH_for_func)/2);
+    cal_B.block<6,3>(0,0) << B_discrete;
+    for (int j=1;j<HORIZON_LENGTH_for_func;j++)
+    {
+      cal_B.block<6,3>(0,3*j) << Z_for_cal_B;
+    }    
+    for (int j=6;j<HORIZON_LENGTH_for_func*6;j+=6)
+    {
+      for (int k=0;k<HORIZON_LENGTH_for_func*3;k+=3)
+      {
+          if(k==0)
+          {
+            cal_B.block<6,3>(j,k) << A_discrete*cal_B.block<6,3>(j-6,k);
+          }
+          else
+          {
+            cal_B.block<6,3>(j,k) << cal_B.block<6,3>(j-6,k-3);
+          }
+      }
+    }    
+
+    //printf("HORIZON_LENGTH is : %d\n",HORIZON_LENGTH_for_func);
+    //printf("NUM_STATES is : %d\n",NUM_STATES_for_func);
+    //printf("NUM_INPUTS is : %d\n",NUM_INPUTS_for_func);
+
+    // Calculating cal_H
+    Eigen::MatrixXf cal_H = ((cal_B.transpose()*cal_Q)*cal_B) + cal_R;
+    Eigen::MatrixXf inverse_cal_H = cal_H.inverse();
+
+    
+    // Calculating cal_h
+    Eigen::MatrixXf cal_h = ((cal_B.transpose()*cal_Q))*(cal_c - cal_r); 
+    //cout << "Diff between actual and this: " << endl << cal_h_dummy - cal_h << endl;
+
+
+    // Now adding rest of the parts for other database
+    // Creating constriant matrices || Single matrices and not block diagonal matrices
+    Matrix3f Gtmp1 = Matrix3f::Zero();
+    Matrix3f Gtmp2 = Matrix3f::Identity();
+    MatrixXf C(Gtmp1.rows(), Gtmp1.cols()+Gtmp2.cols()); //Concatenating Matrices horizontally
+    C << Gtmp1, Gtmp2;     
+
+    // Creating G_x
+    MatrixXf G_x(C.rows() + C.rows(), C.cols()); // Concatenating vertically
+    G_x << C,-1*C; // Constrainsts on velocity upper and lower bounds || L.H.S.
+    
+    // Creating G_u
+    MatrixXf G_u(Gtmp2.rows() + Gtmp2.rows(), Gtmp2.cols());
+    G_u << Gtmp2, -1*Gtmp2; // Constrainst on forces upper and lower bounds || R.H.S.
+
+    
+    /////////// Removing them as of now and using alternate cal_g_x and cal_g_u for small_gamma_a 
+    /////////// Write the logic and confirm once with Vishnu or Alex
+    
+    
+    // Creating g_x and cal_g_x
+    MatrixXf g_x(NUM_STATES_for_func,1), cal_g_x;
+    g_x << 2.6000f, 2.6000f, 3.5000f, 2.6000f, 2.6000f, 3.5000f; //Constrainsts on velocity upper and lower bounds || R.H.S.
+    cal_g_x = g_x.replicate(HORIZON_LENGTH_for_func, 1);
+    
+    
+    // Creating g_u
+    MatrixXf g_u(NUM_STATES_for_func,1), cal_g_u;
+    g_u << 2.9000f, 2.9000f, 2.9000f, 2.9000f, 2.9000f, 2.9000f; //Constrainsts on forces upper and lower bounds || R.H.S.
+    cal_g_u = g_u.replicate(HORIZON_LENGTH_for_func, 1);
+
+      
+      //////////// Alternate cal_g_x and cal_g_u
+    MatrixXf alternate_g_x(NUM_STATES_for_func,1), alternate_cal_g_x;
+    alternate_g_x << 2.6000f, 2.6000f, 3.5000f, -2.6000f, -2.6000f, -3.5000f; //Constrainsts on velocity upper and lower bounds || R.H.S.
+    alternate_cal_g_x = alternate_g_x.replicate(HORIZON_LENGTH_for_func, 1);
+
+    // Creating g_u
+    MatrixXf alternate_g_u(NUM_STATES_for_func,1), alternate_cal_g_u;
+    alternate_g_u << 2.9000f, 2.9000f, 2.9000f, -2.9000f, -2.9000f, -2.9000f; //Constrainsts on forces upper and lower bounds || R.H.S.
+    alternate_cal_g_u = alternate_g_u.replicate(HORIZON_LENGTH_for_func, 1);     
+
+    // Creating cal_. values of all these constraints
+    MatrixXf cal_G_x = blkdiag(G_x,HORIZON_LENGTH_for_func);
+    MatrixXf cal_G_u = blkdiag(G_u,HORIZON_LENGTH_for_func);    
+
+    // Calculating capital_gamma
+    MatrixXf capital_gamma(cal_G_x.rows() + cal_G_u.rows(), cal_G_u.cols()); // Concatenating vertically
+    capital_gamma << cal_G_x*cal_B,cal_G_u; 
+
+
+    // Calculating small_gamma
+    MatrixXf small_gamma(cal_g_x.rows() + cal_g_u.rows(), cal_g_u.cols()); // Concatenating vertically
+    small_gamma << cal_g_x,cal_g_u; 
+
+    // Calculating alternate_small_gamma
+    MatrixXf alternate_small_gamma(alternate_cal_g_x.rows() + alternate_cal_g_u.rows(), alternate_cal_g_u.cols()); // Concatenating vertically
+    alternate_small_gamma << alternate_cal_g_x,alternate_cal_g_u;
+
+    VectorXf u_semi_final = VectorXf::Zero(6);
+
+    if (!init_epc)
+    {
+       initEPCMats(); 
+    }
+
+    //uint8_t ctrl_db_itr = 0;
+
+    for (int var_dtbs=0; var_dtbs < DB_SIZE; ++var_dtbs)
+    {
+      if(!ctrl_db[var_dtbs].active_set_size == 0)
+      {
+        MatrixXf P(1,ctrl_db[var_dtbs].active_set_size);
+        for (int w=0; w<ctrl_db[var_dtbs].active_set_size; w++)
+        {
+            P.col(w) << ctrl_db[var_dtbs].active_set[w];    
+        }   
+        // Generating capital_gamma_a
+        MatrixXf capital_gamma_a = MatrixXf::Zero(P.size(),capital_gamma.cols());    
+        for (int q=0;q<P.size();q++)
+        {
+            capital_gamma_a.row(q) << capital_gamma.row(P(q));
+        }
+        //cout << var_dtbs << endl;
+
+        // Generating alternate_small_gamma_a
+        MatrixXf alternate_small_gamma_a = MatrixXf::Zero(P.size(),1);
+        for (int q=0;q<P.size();q++)
+        {
+            alternate_small_gamma_a.row(q) << alternate_small_gamma.row(P(q));
+        }
+
+          // Creating E_1 to E_6 matrices
+          // One another idea for optimization. Pre calculate all transpose values and assign 
+          // different variables to them so that you don't have to recalculate them all over again
+
+          MatrixXf E_1(capital_gamma_a.rows(),inverse_cal_H.cols());
+          MatrixXf E_2(E_1.rows(),capital_gamma_a.transpose().cols());
+          MatrixXf E_3(E_1.transpose().rows(),E_2.cols());
+          MatrixXf E_4(E_3.rows(),E_1.cols());
+          MatrixXf E_5(E_4.rows(),cal_Q.cols());
+          MatrixXf E_6(E_3.transpose().rows(),cal_Q.cols());
+          MatrixXf lambda_a = MatrixXf::Zero(E_6.rows(),alternate_small_gamma.cols());
+          MatrixXf final_kkt_cond = MatrixXf::Zero(capital_gamma.rows(),u_semi_final.cols());
+
+          E_1 << capital_gamma_a*inverse_cal_H;
+          E_2 << -1*((E_1*capital_gamma_a.transpose()).inverse());
+          E_3 << (E_1.transpose()*E_2);
+          E_4 << inverse_cal_H + (E_3*E_1);
+          E_5 << (E_4*cal_B.transpose())*cal_Q;
+          E_6 << (E_3.transpose()*cal_B.transpose())*cal_Q;
+          lambda_a << (-E_6*cal_r) + (E_6*cal_c + E_2*alternate_small_gamma_a);
+
+          //const char* jambo_flag_var;
+          if (isGreaterThanZero(lambda_a))
+          {
+            u_semi_final = ((E_5*cal_r) - (E_5*cal_c) - (E_3*alternate_small_gamma_a));
+            final_kkt_cond = (small_gamma - (capital_gamma*u_semi_final));  
+            if (isGreaterThanZero(final_kkt_cond))
+            {
+              epcSolutionFound = true;
+              break;              
+            }
+            else
+            {
+              //jambo_flag_var = "Reached last condition but didn't fulfilled";
+              //cout << jambo_flag_var << endl;
+              continue;                                   
+            }
+          }
+          else
+          //jambo_flag_var = "First condition of lambda_a>=0 is not fulfilled so exiting";
+          //cout << lambda_a << endl;
+          //cout << jambo_flag_var << endl;
+          continue;            
+      }
+      else
+      {
+        u_semi_final = inverse_cal_H * (-1*cal_h);
+        epcSolutionFound = true;
+        break;        
+      }
+    }
+
+  Eigen::Vector3f fd_w = Eigen::Vector3f::Zero();
+  
+  if (epcSolutionFound == true)
+  {
+    printf("EPC Solution found here\n");
+    fd_w << u_semi_final.block<3,1>(0,0);   
+  }
+  else
+  {
+    printf("No EPC Solution found\n");
+  }
+  
+  //cout << endl << fd_w << endl;
+  //cout << solutionFound << endl;
+  //printf("EPC SOLUTION VALUES ARE: %.2f\n",double(u_semi_final(0))); 
+   if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {
+      perror( "clock gettime" );
+      exit( EXIT_FAILURE );
+    }
+
+    accum = ( stop.tv_sec - start.tv_sec )
+          + ( stop.tv_nsec - start.tv_nsec )/MILLION;
+
+    printf( "Time elapsed EPC: %3.4f\n", double(accum)); 
+
+  
+  return fd_w;  // Change it to fd_w soon after debug until here gets complted     
+
+  }
+
+  timespec diff(timespec start, timespec end)
+  {
+    timespec temp;
+    if ((end.tv_nsec-start.tv_nsec)<0) {
+      temp.tv_sec = end.tv_sec-start.tv_sec-1;
+      temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+    } else {
+      temp.tv_sec = end.tv_sec-start.tv_sec;
+      temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+    }
+
+    return temp;
+  }  
+*/
   bool updatePositionController()
   {
+    //tic();
+  
+/*  timespec time1, time2;
+  //int temp;
+  clock_gettime(CLOCK_REALTIME, &time1);
+*/
+
     if (!ctrl_state_set || !local_pos_set)
       return false;
 
@@ -182,52 +562,31 @@ private:
     math::Matrix<3, 3> R = q.to_dcm();
     math::Vector<3> Rde3 = R*e3;
 
-    math::Vector<3> e_pos = pos - cmd.pos;
-    math::Vector<3> e_vel = vel - cmd.vel;
 
-    #if 0
-     printf("got local position x: %3.4f y: %3.4f z: %3.4f\n",
+  printf("got local position x: %3.4f y: %3.4f z: %3.4f\n",
           (double) pos(0),
           (double) pos(1),
           (double) pos(2)); 
-    #endif          
+  
 
-    math::Vector<3> fd_w;
+    math::Vector<3> e_pos = pos - cmd.pos;
+    math::Vector<3> e_vel = vel - cmd.vel;
 
-    #if 0
-    math::Vector<3> *pos_t = &pos;
-    math::Vector<3> *vel_t = &vel;
-    math::Vector<3> *cmd_pos_t = &cmd.pos;
-    math::Vector<3> *cmd_vel_t = &cmd.vel;
-    #endif
+/*    Eigen::Vector3f e_pos_in_eigen = Eigen::Vector3f::Zero();
+    e_pos_in_eigen << e_pos(0),e_pos(1),e_pos(2),e_pos(3);
 
-    //struct vec *force_world;
-    //#if 0
-    static epc epc_obj;
-    //const loc_pos_t *pos
-
-    if (!epc_obj.epc_logic(fd_w, pos, vel, cmd.pos, cmd.vel, cmd.acc, mass, gravity(2)))
-    {
-        // World force in NED frame
-        fd_w =
-          (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
-
-        printf("epc_logic is false\n");
-    }   
-    //#endif
-
-    /*
-    fd_w =
-      (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
-    */
-
-
-printf("fd_w x: %3.4f\n", double(fd_w(0)));
+    Eigen::Vector3f e_vel_in_eigen = Eigen::Vector3f::Zero();
+    e_vel_in_eigen << e_vel(0),e_vel(1),e_vel(2);
+*/  
+    //Eigen::Vector3f fd_w_in_EigenForm = Eigen::Vector3f::Zero();
+    //fd_w_in_EigenForm << MocapPositionController::cov(dt_, mass, HORIZON_LENGTH, NUM_STATES, NUM_INPUTS, e_pos_in_eigen, e_vel_in_eigen);
 
 
 
+    // World force in NED frame
+    math::Vector<3> fd_w =
+      (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;
 
-    // Confusion about this: Should we keep L1 Position Observe or not?
     // L1 Position Observe (provides world force error in NED frame)
     math::Vector<3> l1_fw = l1_pos_observer.update(R, vel, current_rpm_cmd);
 
@@ -292,8 +651,15 @@ printf("fd_w x: %3.4f\n", double(fd_w(0)));
     }
 #endif
 
+  /*
+  clock_gettime(CLOCK_REALTIME, &time2);
+  //printf("In seconds: %1.0f\n", double(diff(time1,time2).tv_sec));
+  printf("In milliseconds: %9.9f\n", double(diff(time1,time2).tv_nsec));
+  */
     return true;
   }
+
+
 
   void computeHeadingReference(const math::Vector<3>& desired_euler_zyx,
                                math::Vector<3>& omg_des,
@@ -508,6 +874,14 @@ printf("fd_w x: %3.4f\n", double(fd_w(0)));
   math::Vector<3> gravity;
   math::Vector<3> e3;
   float mass;
+  
+  /*float dt_;  // THIS IS EPC CODE BASED dt, replace this with dt obtained like Moses's code later
+  
+  int HORIZON_LENGTH;
+  int NUM_STATES;
+  int NUM_INPUTS;
+  bool epcSolutionFound = false;  
+  */
 
   L1PositionObserver l1_pos_observer;
   math::Vector<4> current_rpm_cmd;

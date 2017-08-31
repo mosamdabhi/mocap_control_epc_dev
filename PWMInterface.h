@@ -33,7 +33,7 @@ public:
   unsigned short getZeroCommand();
   unsigned short getMaxCommand();
 
-  unsigned short convertRPMToPWM(float rpm);
+  unsigned short convertRPMToPWMVoltageCompensation(float rpm);
 
   bool sendCommand(const pwm_cmd_t& cmd);
 
@@ -59,7 +59,6 @@ private:
   int pwm_rate;
 
   // Voltage compensation
-  bool rpm_control;
   float rpm_coeff;
   float voltage_coeff;
   float affine_coeff;
