@@ -15,7 +15,6 @@
 #include "epc_matrixmath.h"
 #include "epc.h"
 
-
 class MocapPositionController
 {
 public:
@@ -181,57 +180,65 @@ private:
     math::Matrix<3, 3> R = q.to_dcm();
     math::Vector<3> Rde3 = R*e3;
 
-    math::Vector<3> e_pos = pos - cmd.pos;
-    math::Vector<3> e_vel = vel - cmd.vel;
+    math::Vector<3> e_pos = cmd.pos - pos;
+    math::Vector<3> e_vel = cmd.vel - vel;
 
-    #if 0
-     printf("got local position x: %3.4f y: %3.4f z: %3.4f\n",
-          (double) pos(0),
-          (double) pos(1),
-          (double) pos(2)); 
-    #endif          
     
+    #if 0
+    printf("got cmd_gains kp_x: %3.4f kp_y: %3.4f kp_z: %3.4f mass: %3.4f\n",
+          (double) cmd_gains.kp(0),
+          (double) cmd_gains.kp(1),
+          (double) cmd_gains.kp(2),
+          (double) mass);
+    //#endif
+    //#if 
+    printf("got cmd_gains kd_x: %3.4f kd_y: %3.4f kd_z: %3.4f\n",
+          (double) cmd_gains.kd(0),
+          (double) cmd_gains.kd(1),
+          (double) cmd_gains.kd(2));
+    #endif
+    
+
     // World force in NED frame
     math::Vector<3> fd_w;
-          //(-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;
+
     
 
-
-    //#if 0
+    
     static epc epc_obj;
-    //const loc_pos_t *pos
-
+  
+    //#if 0
     if (!epc_obj.epc_logic(fd_w, pos, vel, cmd.pos, cmd.vel, cmd.acc, mass, gravity(2)))
     {
+
         // World force in NED frame
         fd_w =
-          (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
+          (cmd_gains.kp.emult(e_pos) + cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;              
 
         //printf("epc_logic is false\n");
     }
-    //#endif
-    
-
-    //fd_w = (-cmd_gains.kp.emult(e_pos) - cmd_gains.kd.emult(e_vel) + cmd.acc - gravity)*mass;     
-
+    //#endif   
+      
 
     #if 0
      printf("got force in       x: %3.4f y: %3.4f z: %3.4f\n",
           (double) fd_w(0),
           (double) fd_w(1),
           (double) fd_w(2)); 
-    #endif          
+    #endif      
 
-
+    //printf("gravity is: %3.7f\n", double(mass));
 
     // L1 Position Observe (provides world force error in NED frame)
-    //math::Vector<3> l1_fw = l1_pos_observer.update(R, vel, current_rpm_cmd);
+    math::Vector<3> l1_fw = l1_pos_observer.update(R, vel, current_rpm_cmd);
 
     // Total force
-    //fd_w -= l1_fw;
+    fd_w -= l1_fw;
 
     // thrust magnitude (in NED)
     att_cmd.thrust = fd_w(0)*Rde3(0) + fd_w(1)*Rde3(1) + fd_w(2)*Rde3(2);
+
+    //printf("thrust values: %3.5f\n", double(att_cmd.thrust));
 
 #if 0
     static unsigned int debug_counter1 = 0;
