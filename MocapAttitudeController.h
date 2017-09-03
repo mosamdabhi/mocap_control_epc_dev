@@ -39,7 +39,6 @@
 #include <poll.h>
 #include <px4_posix.h>
 #include <mathlib/mathlib.h>
-#include <mathlib/math/filter/LowPassFilter2p.hpp>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/cascaded_command.h>
@@ -191,9 +190,7 @@ private:
   }
 
   // Model parameters
-  float motor_model[3];
-  float rpm_per_pwm;
-  float rpm_v_zero;
+  float cT, cT_inv;
   float gravity_magnitude;
   float mass;
 
@@ -230,9 +227,5 @@ private:
   L1AttitudeObserver l1_att_observer;
 
   orb_advert_t cascaded_command_pub;
-
-  float sample_freq;
-  float cutoff_freq_x, cutoff_freq_y, cutoff_freq_z;
-  math::LowPassFilter2p Mb_lp_x, Mb_lp_y, Mb_lp_z;
 };
 #endif
