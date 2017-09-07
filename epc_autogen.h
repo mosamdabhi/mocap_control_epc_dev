@@ -13,7 +13,7 @@ enum
   NUM_CTRLS = 3,
   NUM_CONSTR_STATES = 3,
   NUM_CONSTR = 2*(NUM_CONSTR_STATES+NUM_CTRLS),
-  DB_SIZE = 1,
+  DB_SIZE = 19,
   MAX_SUCCESSORS = 20
 };
 
@@ -98,12 +98,48 @@ CONSTRUCT_STATIC_MAT_WITH_DATA_FOR_ONLY_COLS_NO_ROWS(C_GxB, NUM_CONSTR_STATES, N
   ARG_DATA({0, 0, 0.011561f, 0, 0, 0, 0.011561f, 0, 0, 0.011561f, 0, 0, 0, 0.011561f, 0, 0, 0.011561f, 0}));
 
 CONSTRUCT_STATIC_MAT_WITH_DATA_FOR_NO_ROWS_COLS(C_gam, NUM_CONSTR, 1, float,
-  ARG_DATA({6.600000f, 6.600000f, 6.600000f, 6.600000f, 6.600000f, 6.600000f, 6.600000f, 16.117229f, 24.599982f, 24.599982f, 16.117229f, 24.599982f}));
+  ARG_DATA({1.000000f, 1.000000f, 1.000000f, 1.000000f, 1.000000f, 1.000000f, 1.000000f, 16.117229f, 24.599982f, 24.599982f, 16.117229f, 24.599982f}));
 
 static uint8_t active_set0[0] = {};
+static uint8_t active_set1[1] = {8};
+static uint8_t active_set2[1] = {5};
+static uint8_t active_set3[1] = {9};
+static uint8_t active_set4[2] = {6, 9};
+static uint8_t active_set5[2] = {4, 5};
+static uint8_t active_set6[3] = {1, 4, 5};
+static uint8_t active_set7[2] = {1, 4};
+static uint8_t active_set8[1] = {4};
+static uint8_t active_set9[1] = {10};
+static uint8_t active_set10[2] = {7, 10};
+static uint8_t active_set11[3] = {0, 3, 5};
+static uint8_t active_set12[3] = {0, 3, 8};
+static uint8_t active_set13[2] = {3, 8};
+static uint8_t active_set14[2] = {0, 3};
+static uint8_t active_set15[2] = {8, 9};
+static uint8_t active_set16[3] = {6, 8, 9};
+static uint8_t active_set17[1] = {3};
+static uint8_t active_set18[3] = {7, 8, 10};
 
 
-static uint8_t successors0[1] = {0};
+static uint8_t successors0[4] = {0, 2, 1, 8};
+static uint8_t successors1[2] = {1, 0};
+static uint8_t successors2[2] = {2, 0};
+static uint8_t successors3[4] = {3, 4, 2, 0};
+static uint8_t successors4[2] = {4, 0};
+static uint8_t successors5[3] = {5, 6, 0};
+static uint8_t successors6[3] = {6, 5, 0};
+static uint8_t successors7[3] = {7, 13, 0};
+static uint8_t successors8[2] = {8, 0};
+static uint8_t successors9[2] = {9, 0};
+static uint8_t successors10[2] = {10, 0};
+static uint8_t successors11[3] = {11, 12, 0};
+static uint8_t successors12[3] = {12, 11, 0};
+static uint8_t successors13[3] = {13, 7, 0};
+static uint8_t successors14[3] = {14, 7, 0};
+static uint8_t successors15[3] = {15, 1, 0};
+static uint8_t successors16[3] = {16, 2, 0};
+static uint8_t successors17[3] = {17, 16, 0};
+static uint8_t successors18[3] = {18, 16, 0};
 
 
 void initDatabase()
@@ -112,8 +148,100 @@ void initDatabase()
   ctrl_db[0].active_set = active_set0;
   ctrl_db[0].active_set_size = 0;
   ctrl_db[0].successors = successors0;
-  ctrl_db[0].successors_size = 1;
+  ctrl_db[0].successors_size = 4;
+  ctrl_db[1].id = 1;
+  ctrl_db[1].active_set = active_set1;
+  ctrl_db[1].active_set_size = 1;
+  ctrl_db[1].successors = successors1;
+  ctrl_db[1].successors_size = 2;
+  ctrl_db[2].id = 2;
+  ctrl_db[2].active_set = active_set2;
+  ctrl_db[2].active_set_size = 1;
+  ctrl_db[2].successors = successors2;
+  ctrl_db[2].successors_size = 2;
+  ctrl_db[3].id = 3;
+  ctrl_db[3].active_set = active_set3;
+  ctrl_db[3].active_set_size = 1;
+  ctrl_db[3].successors = successors3;
+  ctrl_db[3].successors_size = 4;
+  ctrl_db[4].id = 4;
+  ctrl_db[4].active_set = active_set4;
+  ctrl_db[4].active_set_size = 2;
+  ctrl_db[4].successors = successors4;
+  ctrl_db[4].successors_size = 2;
+  ctrl_db[5].id = 5;
+  ctrl_db[5].active_set = active_set5;
+  ctrl_db[5].active_set_size = 2;
+  ctrl_db[5].successors = successors5;
+  ctrl_db[5].successors_size = 3;
+  ctrl_db[6].id = 6;
+  ctrl_db[6].active_set = active_set6;
+  ctrl_db[6].active_set_size = 3;
+  ctrl_db[6].successors = successors6;
+  ctrl_db[6].successors_size = 3;
+  ctrl_db[7].id = 7;
+  ctrl_db[7].active_set = active_set7;
+  ctrl_db[7].active_set_size = 2;
+  ctrl_db[7].successors = successors7;
+  ctrl_db[7].successors_size = 3;
+  ctrl_db[8].id = 8;
+  ctrl_db[8].active_set = active_set8;
+  ctrl_db[8].active_set_size = 1;
+  ctrl_db[8].successors = successors8;
+  ctrl_db[8].successors_size = 2;
+  ctrl_db[9].id = 9;
+  ctrl_db[9].active_set = active_set9;
+  ctrl_db[9].active_set_size = 1;
+  ctrl_db[9].successors = successors9;
+  ctrl_db[9].successors_size = 2;
+  ctrl_db[10].id = 10;
+  ctrl_db[10].active_set = active_set10;
+  ctrl_db[10].active_set_size = 2;
+  ctrl_db[10].successors = successors10;
+  ctrl_db[10].successors_size = 2;
+  ctrl_db[11].id = 11;
+  ctrl_db[11].active_set = active_set11;
+  ctrl_db[11].active_set_size = 3;
+  ctrl_db[11].successors = successors11;
+  ctrl_db[11].successors_size = 3;
+  ctrl_db[12].id = 12;
+  ctrl_db[12].active_set = active_set12;
+  ctrl_db[12].active_set_size = 3;
+  ctrl_db[12].successors = successors12;
+  ctrl_db[12].successors_size = 3;
+  ctrl_db[13].id = 13;
+  ctrl_db[13].active_set = active_set13;
+  ctrl_db[13].active_set_size = 2;
+  ctrl_db[13].successors = successors13;
+  ctrl_db[13].successors_size = 3;
+  ctrl_db[14].id = 14;
+  ctrl_db[14].active_set = active_set14;
+  ctrl_db[14].active_set_size = 2;
+  ctrl_db[14].successors = successors14;
+  ctrl_db[14].successors_size = 3;
+  ctrl_db[15].id = 15;
+  ctrl_db[15].active_set = active_set15;
+  ctrl_db[15].active_set_size = 2;
+  ctrl_db[15].successors = successors15;
+  ctrl_db[15].successors_size = 3;
+  ctrl_db[16].id = 16;
+  ctrl_db[16].active_set = active_set16;
+  ctrl_db[16].active_set_size = 3;
+  ctrl_db[16].successors = successors16;
+  ctrl_db[16].successors_size = 3;
+  ctrl_db[17].id = 17;
+  ctrl_db[17].active_set = active_set17;
+  ctrl_db[17].active_set_size = 1;
+  ctrl_db[17].successors = successors17;
+  ctrl_db[17].successors_size = 3;
+  ctrl_db[18].id = 18;
+  ctrl_db[18].active_set = active_set18;
+  ctrl_db[18].active_set_size = 3;
+  ctrl_db[18].successors = successors18;
+  ctrl_db[18].successors_size = 3;
 }
+
+
 
 
 

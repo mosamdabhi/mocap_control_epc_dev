@@ -158,6 +158,77 @@ static void getCgamRows(uint16_t num_rows, uint16_t* rows)
   }
 }
 
+static int16_t failed_idx = -1;
+static float failed_constr = 0;
+
+static bool check_Constraints(math::Vector<3> &pos_for_checkConstraints,
+                              math::Vector<3> &vel_for_checkConstraints)
+{
+  uint16_t i, row_idx, col_idx, kk, c_i;
+  bool meets_constraints = true;
+  for(i=0; i<N*NUM_CONSTR;i++)
+  {
+    float constr_lhs = 0;
+    float constr_rhs; // = C_gam[i];
+
+    if (i < 2*N*NUM_CONSTR_STATES)
+    {
+
+      row_idx = i%NUM_CONSTR_STATES;
+      col_idx = N*NUM_CTRLS - ((i/NUM_CONSTR_STATES)%N)*NUM_CTRLS;      
+
+      int neg = -1;
+      if (i < N*NUM_CONSTR_STATES)
+      {
+        constr_rhs = C_gam[row_idx];
+        neg = 1;
+      }
+      else
+      {
+        constr_rhs = C_gam[row_idx+NUM_CONSTR_STATES];
+      }
+
+      // Implements Gx*x_0
+      if ((i%NUM_CONSTR_STATES)==0) constr_lhs += neg*vel_for_checkConstraints(0);
+      if ((i%NUM_CONSTR_STATES)==1) constr_lhs += neg*vel_for_checkConstraints(1);      
+
+
+      for (kk = 0; kk<C_GxB_cols-col_idx+NUM_CTRLS; kk++)
+      {
+        constr_lhs += neg * C_GxB[row_idx*C_GxB_cols+kk] * C_ctrl[kk];
+      }      
+    }
+    else
+    {
+      c_i = (i - 2*N*NUM_CONSTR_STATES)%(N*NUM_CTRLS);
+      constr_lhs = C_ctrl[c_i];
+
+      row_idx = 2*NUM_CONSTR_STATES + (i-2*N*NUM_CONSTR_STATES)%(NUM_CTRLS);
+      if (i >= 2*N*NUM_CONSTR_STATES + N*NUM_CTRLS)
+      {
+        constr_lhs = -constr_lhs;
+        row_idx += NUM_CTRLS;
+      }
+      constr_rhs = C_gam[row_idx];
+    }
+
+
+
+    if ( (constr_lhs - constr_rhs) > 1e-2f )
+    {
+      meets_constraints = false;
+      failed_idx = i;
+      failed_constr = constr_lhs;
+      break;    
+    }
+    else
+    {
+      failed_idx = -1;
+      failed_constr = 0;
+    }
+  }
+  return meets_constraints; 
+}
 
 class epc
 {
@@ -224,6 +295,7 @@ public:
             // If active set isn't empty, computing Lagrange Multipliers
             if(C_idxs_rows > 0)
             {
+
                 MULT_GAMMAROW_MATRIX(C_idxs, C_Hinv, C_E1)
                 MULT_MATRIX_GAMMAROW_TRANSPOSED(C_idxs, C_E1, C_E2)
                 INV_MAT_SYMPD(C_E2, C_E2)
@@ -269,6 +341,7 @@ public:
 
             if (C_lam_a_rows > 0)
             {
+
                 COPY_MATRIX(C_Hinv, C_E4)
                 MAC_MATRIX(C_E4, C_E3, C_E1)
                 MULTIPLYING_MATRIX(C_E4, C_BtQrc, C_ctrl)
@@ -276,7 +349,7 @@ public:
 
             }
             else
-            {
+            {  
                 instantiate_r_minus_c(pos_, vel_, cmd_pos_, cmd_vel_);
                 MULTIPLYING_MATRIX(C_Hinv, C_BtQrc, C_ctrl)
             }
@@ -321,14 +394,23 @@ public:
 //    MULTIPLYING_MATRIX(matrix_K, C_r_minus_c, C_fin_ctrl);
 
 
+    if(check_Constraints(pos_, vel_))
+    {
+      world_force(0) = C_ctrl[0] + (cmd_acc_(0)*g_vehicleMass);
+      world_force(1) = C_ctrl[1] + (cmd_acc_(0)*g_vehicleMass);
+      world_force(2) = C_ctrl[2] + ((cmd_acc_(0) - GRAV)*g_vehicleMass);      
+      //printf("Got the fin\n");
 
+      return true;
+      //printf("Check here\n");
+    }
+    else
+      return false;
 
 
     //printf("matrix K: %3.5f\n", double(matrix_K[125]+matrix_K[131]+matrix_K[137]+matrix_K[143]+matrix_K[149]+matrix_K[155]+matrix_K[161]+matrix_K[167]+matrix_K[173]+matrix_K[179]));
     
-    world_force(0) = C_ctrl[0] + (cmd_acc_(0)*g_vehicleMass);
-    world_force(1) = C_ctrl[1] + (cmd_acc_(0)*g_vehicleMass);
-    world_force(2) = C_ctrl[2] + ((cmd_acc_(0) - GRAV)*g_vehicleMass);
+
        
     #if 0
     //DIVIDE_MASS_MATRIX(matrix_K);
@@ -344,7 +426,6 @@ public:
     //world_force(0) = (C_ctrl[0] + cmd_acc_(0))  * g_vehicleMass;
     //world_force(1) = (C_ctrl[1] + cmd_acc_(1)) * g_vehicleMass; 
     //world_force(2) = (C_ctrl[2] + (cmd_acc_(2) - GRAV)) * g_vehicleMass;    
-    return true;
   }
 
 };
