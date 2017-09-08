@@ -145,7 +145,7 @@ void MotorManager::sendCommand()
     if (current_cmd.motor[i] < 1.0e-6f)
       out.motor[i] = pwm.getZeroCommand();
     else
-      out.motor[i] = pwm.convertRPMToPWM(current_cmd.motor[i]);
+      out.motor[i] = pwm.convertRPMToPWMVoltageCompensation(current_cmd.motor[i]);
   }
   pwm.sendCommand(out);
 

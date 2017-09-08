@@ -50,10 +50,7 @@ MocapAttitudeController::MocapAttitudeController() :
   motor_mode(OFF),
   input_mode(RPM),
   motor_start_set(false),
-  cascaded_command_pub(nullptr),
-  Mb_lp_x(0.0f, 0.0f),
-  Mb_lp_y(0.0f, 0.0f),
-  Mb_lp_z(0.0f, 0.0f)
+  cascaded_command_pub(nullptr)
 {
   inertia.zero();
 }
@@ -177,12 +174,7 @@ void MocapAttitudeController::update(bool cmd_updated_ext)
     case IDLE:
     {
       if (cmd_received)
-      {
         setMotorMode(RUNNING);
-        Mb_lp_x.reset(0.0f);
-        Mb_lp_y.reset(0.0f);
-        Mb_lp_z.reset(0.0f);
-      }
       else
         mm.setRPMCommand(MotorManager::MIN);
       break;
@@ -246,70 +238,17 @@ void MocapAttitudeController::update(bool cmd_updated_ext)
 
 float MocapAttitudeController::convertRPMToForce(float rpm)
 {
-  // Assumes:
-  // Linear motor: RPM = m*PWM + b;
-  // Quadratic thrust model: Thrust = p1*PWM^2 + p2*PWM + p3;
-  // Thrust = p1*(RPM-b)^2/m^2 + p2*(RPM-b)/m + p3;
-  float u = (fmaxf(rpm, 0.0f) - rpm_v_zero)/rpm_per_pwm;
-  float f = motor_model[0]*u*u + motor_model[1]*u + motor_model[2];
-
-#if 0
-  static unsigned int counter = 0;
-  if (counter++ > 100)
-  {
-    puts("convertRPMToForce");
-    char buf[128];
-    sprintf(buf, "rpm = %0.5f, rpm_per_pwm=%0.5f, rpm_v_zero=%0.5f, f=%0.5f",
-            (double)rpm, (double)rpm_per_pwm,
-            (double)rpm_v_zero, (double)f);
-    printf("%s\n", buf);
-    counter = 0;
-  }
-#endif
-
-  return f;
+  // Assumes quadratic force model
+  // f_i = cT*w_i^2
+  return rpm > 0.0f ? cT*rpm*rpm : 0.0f;
 }
 
 float MocapAttitudeController::convertForceToRPM(float force)
 {
-  // Assumes:
-  // Linear motor: RPM = m*PWM + b;
-  // Quadratic thrust model: Thrust = p1*PWM^2 + p2*PWM + p3;
-  float f = fmaxf(0.0f, force);
-  float p1 = motor_model[0];
-  float p2 = motor_model[1];
-  float p3 = motor_model[2];
-
-  // Solve the quadratic equation below (selecting the appropriate solution)
-  // Confirm that it is not imaginary with requirements:
-  // If f < p3 (most likely case), imaginary when p1 > p2^2/(4*p3-4*f)
-  // If f > p3 (less likely case), imaginary when p1 < p2^2/(4*p3-4*f)
-  bool imaginary = false;
-  if (((f < p3) && (p1 > 0.25f*p2*p2/(p3-f))) ||
-      ((f > p3) && (p1 < 0.25f*p2*p2/(p3-f))))
-    imaginary = true;
-
-  float sq = 0.0f;
-  if (!imaginary)
-    sq = sqrtf(p2*p2 - 4*p1*p3 + 4*p1*f);
-
-  float pwm = 0.5f*(-p2 + sq)/p1;
-  float rpm = rpm_per_pwm*pwm + rpm_v_zero;
-
-#if 0
-  static unsigned int counter = 0;
-  if (counter++ > 100)
-  {
-    puts("convertForceToRPM");
-    char buf[128];
-    sprintf(buf, "f = %0.5f, p1=%0.5f, p2=%0.5f, p3=%0.5f, sq=%0.5f, rpm=%0.5f",
-            (double)f, (double)p1, (double)p2, (double)p3, (double)sq, (double)rpm);
-    printf("%s\n", buf);
-    counter = 0;
-  }
-#endif
-
-  return rpm;
+  // Assumes quadratic force model
+  // f_i = cT*w_i^2
+  float ws = force*cT_inv;
+  return ws > 0.0f ? sqrtf(ws) : 0.0f;
 }
 
 void MocapAttitudeController::convertBodyForcesToRPM(const body_forces_t& b,
@@ -325,20 +264,19 @@ void MocapAttitudeController::convertBodyForcesToRPM(const body_forces_t& b,
   math::Vector<4> ub(fbz, b.Mb[0], b.Mb[1], b.Mb[2]);
   math::Vector<4> fm = mixer_inv*ub;
 
-  // Convert the force to RPM and ensure it is in bounds
+  // Convert the forces to RPM commands
   for (unsigned int i = 0; i < 4; i++)
+  {
+    // Ensure a positive force
+    fm(i) = fmaxf(fm(i), 0.0f);
+    // Convert the force to RPM and ensure it is in bounds
     out.motor[i] = fminf(fmaxf(convertForceToRPM(fm(i)), rpm_min), rpm_max);
+  }
 
 #if 0
   static unsigned int counter = 0;
   if (counter++ > 100)
   {
-    puts("convertBodyForcesToRPM");
-    char buf[128];
-    sprintf(buf, "fm_base = %0.5f\nfbz=%0.5f", (double)fm_base, (double)fbz);
-    printf("%s\n", buf);
-    puts("ub:");
-    ub.print();
     puts("fm:");
     fm.print();
     out.print();
@@ -396,6 +334,19 @@ bool MocapAttitudeController::updateCascadedAttitudeController(MotorManager::rpm
   // Desired angular acceleration
   math::Vector<3> dOmd(att_cmd_casc.ang_acc);
 
+#if 0
+  static unsigned int debug_counter = 0;
+  if (debug_counter++ > 100)
+  {
+    att_cmd_casc.print();
+    puts("eR:");
+    eR.print();
+    puts("eOm:");
+    eOm.print();
+    debug_counter = 0;
+  }
+#endif
+
   math::Vector<3> kR(att_cmd_casc_gains.kR);
   math::Vector<3> kOm(att_cmd_casc_gains.kOm);
 
@@ -420,49 +371,10 @@ bool MocapAttitudeController::updateCascadedAttitudeController(MotorManager::rpm
   // Total Moment
   Mb -= l1_Mb;
 
-  // Apply low-pass filter on heading
-  float cmd_freq = 1.0e6f/static_cast<float>(dt_cmd);
-  if (fabsf(cmd_freq - sample_freq)/cmd_freq > 0.1f)
-  {
-    sample_freq = cmd_freq;
-#if 0
-    char buf[128];
-    sprintf(buf, "cmd_freq = %0.5f, sample_freq = %0.5f, ratio = %0.5f",
-            (double)cmd_freq, (double)sample_freq,
-            (double)(fabsf(cmd_freq - sample_freq)/cmd_freq));
-    printf("%s\n", buf);
-#endif
-    Mb_lp_x.set_cutoff_frequency(sample_freq, cutoff_freq_x);
-    Mb_lp_y.set_cutoff_frequency(sample_freq, cutoff_freq_y);
-    Mb_lp_z.set_cutoff_frequency(sample_freq, cutoff_freq_z);
-  }
-
-  math::Vector<3> Mb_lp;
-  Mb_lp(0) = Mb_lp_x.apply(Mb(0));
-  Mb_lp(1) = Mb_lp_y.apply(Mb(1));
-  Mb_lp(2) = Mb_lp_z.apply(Mb(2));
-
   for (unsigned int i = 0; i < 3; i++)
-    body_cmd.Mb[i] = Mb_lp(i);
+    body_cmd.Mb[i] = Mb(i);
 
   convertBodyForcesToRPM(body_cmd, out);
-
-#if 0
-  static unsigned int debug_counter = 0;
-  if (debug_counter++ > 100)
-  {
-    puts("updateCascadedAttitudeController");
-    char buf[128];
-    sprintf(buf, "command Hz = %0.5f", (double)cmd_freq);
-    printf("%s\n", buf);
-    att_cmd_casc.print();
-    puts("eR:");
-    eR.print();
-    puts("eOm:");
-    eOm.print();
-    debug_counter = 0;
-  }
-#endif
 
   return true;
 }
@@ -554,6 +466,7 @@ void MocapAttitudeController::setMotorMode(const motor_modes_t& m)
 
 bool MocapAttitudeController::loadParameters()
 {
+  cT = pu::getFloatParam("MCC_CT");
   mass = pu::getFloatParam("MCC_TOTAL_MASS");
   gravity_magnitude = pu::getFloatParam("MCC_GRAVITY");
 
@@ -565,6 +478,8 @@ bool MocapAttitudeController::loadParameters()
 
   rpm_min = pu::getFloatParam("MCC_RPM_MIN");
   rpm_max = pu::getFloatParam("MCC_RPM_MAX");
+
+  cT_inv = 1.0f/cT;
 
   float ms = pu::getFloatParam("MCC_MOMENT_SCALE");
   float length = pu::getFloatParam("MCC_ARM_LENGTH");
@@ -592,27 +507,6 @@ bool MocapAttitudeController::loadParameters()
   inertia(0,0) = Ixx; inertia(0,1) = Ixy; inertia(0,2) = Ixz;
   inertia(1,0) = Ixy; inertia(1,1) = Iyy; inertia(1,2) = Iyz;
   inertia(2,0) = Ixz; inertia(2,1) = Iyz; inertia(2,2) = Izz;
-
-  rpm_per_pwm = pu::getFloatParam("MCC_RPM_PER_PWM");
-  rpm_v_zero = pu::getFloatParam("MCC_RPM_V_ZERO");
-  motor_model[0] = pu::getFloatParam("MCC_MOT_P1");
-  motor_model[1] = pu::getFloatParam("MCC_MOT_P2");
-  motor_model[2] = pu::getFloatParam("MCC_MOT_P3");
-
-  // Will be corrected online if rates change within 10%
-  sample_freq = 250.0f;
-
-  cutoff_freq_x = pu::getFloatParam("MCC_MX_CUTOFF_HZ");
-  cutoff_freq_y = pu::getFloatParam("MCC_MY_CUTOFF_HZ");
-  cutoff_freq_z = pu::getFloatParam("MCC_MZ_CUTOFF_HZ");
-
-  Mb_lp_x.set_cutoff_frequency(sample_freq, cutoff_freq_x);
-  Mb_lp_y.set_cutoff_frequency(sample_freq, cutoff_freq_y);
-  Mb_lp_z.set_cutoff_frequency(sample_freq, cutoff_freq_z);
-
-  Mb_lp_x.reset(0.0f);
-  Mb_lp_y.reset(0.0f);
-  Mb_lp_z.reset(0.0f);
 
   return true;
 }

@@ -50,13 +50,15 @@ void PWMInterface::printCommand(const pwm_cmd_t& p)
   printf("[PWMInterface] current voltage = %s\n", buf);
 }
 
-unsigned short PWMInterface::convertRPMToPWM(float rpm)
+unsigned short PWMInterface::convertRPMToPWMVoltageCompensation(float rpm)
 {
-  float t = rpm_coeff*rpm + affine_coeff;
-
-  if (!rpm_control)
-    t += voltage_coeff*current_voltage;
-
+  //float t = voltage_coeff*current_voltage + rpm_coeff*rpm + affine_coeff;
+  float x = (rpm - RPM_mean)/RPM_sd;
+  float y = (current_voltage - battery_voltage_mean)/battery_voltage_sd;
+  float t = (p00 + p10*x + p01*y + p20*powf(x,2) + p11*x*y + p02*powf(y,2) + p30*powf(x,3)
+            + p21*powf(x,2)*y + p12*x*powf(y,2) + p03*powf(y,3) + p40*powf(x,4) + p31*powf(x,3)*y
+            + p22*powf(x,2)*powf(y,2) + p13*x*powf(y,3) + p04*powf(y,4) + p50*powf(x,5) + p41*powf(x,4)*y
+            + p32*powf(x,3)*powf(y,2) + p23*powf(x,2)*powf(y,3) + p14*x*powf(y,4) + p05*powf(y,5));
   if (t < 0.0f) t = 0.0f;
   return saturatePWMCommand((unsigned short)roundf(t));
 }
@@ -124,8 +126,6 @@ bool PWMInterface::sendCommand(const pwm_cmd_t& cmd)
 
 bool PWMInterface::loadParameters()
 {
-  rpm_control = static_cast<bool>(pu::getIntParam("MCC_MOT_RPM_CTRL"));
-
   // Use the values associated with main
   pwm_zero = pu::getUShortParam("PWM_AUX_DISARMED");
   pwm_min = pu::getUShortParam("PWM_AUX_MIN");
@@ -139,14 +139,34 @@ bool PWMInterface::loadParameters()
 
   pwm_rate = pu::getIntParam("MCC_PWM_RATE");
 
-  float rpm_per_pwm = pu::getFloatParam("MCC_RPM_PER_PWM");
-  float rpm_per_volt = pu::getFloatParam("MCC_RPM_PER_VOLT");
-  float rpm_at_zero_pwm_and_volts = pu::getFloatParam("MCC_RPM_V_ZERO");
-
-  rpm_coeff = 1.0f / rpm_per_pwm;
-  voltage_coeff = -rpm_per_volt / rpm_per_pwm;
-  affine_coeff = -rpm_at_zero_pwm_and_volts / rpm_per_pwm;
-
+  p00 = pu::getFloatParam("MCC_RPM2PWM_00");
+  p10 = pu::getFloatParam("MCC_RPM2PWM_10");
+  p01 = pu::getFloatParam("MCC_RPM2PWM_01");
+  p20 = pu::getFloatParam("MCC_RPM2PWM_20");
+  p11 = pu::getFloatParam("MCC_RPM2PWM_11");
+  p02 = pu::getFloatParam("MCC_RPM2PWM_02");
+  p30 = pu::getFloatParam("MCC_RPM2PWM_30");
+  p21 = pu::getFloatParam("MCC_RPM2PWM_21");
+  p12 = pu::getFloatParam("MCC_RPM2PWM_12");
+  p03 = pu::getFloatParam("MCC_RPM2PWM_03");
+  p40 = pu::getFloatParam("MCC_RPM2PWM_40");
+  p31 = pu::getFloatParam("MCC_RPM2PWM_31");
+  p22 = pu::getFloatParam("MCC_RPM2PWM_22");
+  p13 = pu::getFloatParam("MCC_RPM2PWM_13");
+  p04 = pu::getFloatParam("MCC_RPM2PWM_04");
+  p50 = pu::getFloatParam("MCC_RPM2PWM_50");
+  p41 = pu::getFloatParam("MCC_RPM2PWM_41");
+  p32 = pu::getFloatParam("MCC_RPM2PWM_32");
+  p23 = pu::getFloatParam("MCC_RPM2PWM_23");
+  p14 = pu::getFloatParam("MCC_RPM2PWM_14");
+  p05 = pu::getFloatParam("MCC_RPM2PWM_05");
+  RPM_mean =  pu::getFloatParam("MCC_RPM_M");
+  RPM_sd =  pu::getFloatParam("MCC_RPM_SD");
+  battery_voltage_mean =  pu::getFloatParam("MCC_V_M");
+  battery_voltage_sd = pu::getFloatParam("MCC_V_SD");
+  //rpm_coeff = 1.0f / rpm_per_pwm;
+  //voltage_coeff = -rpm_per_volt / rpm_per_pwm;
+  //affine_coeff = -rpm_at_zero_pwm_and_volts / rpm_per_pwm;
   return true;
 }
 
@@ -184,24 +204,18 @@ void PWMInterface::printParameters()
   printf("[PWMInterface] pwm_max = %hu\n", pwm_max);
 
   // Hack to deal with NuttX printf of float/double values
-  char buf[32];
+  //char buf[32];
+  //sprintf(buf, "%0.2f", (double)rpm_coeff);
+  //printf("[PWMInterface] rpm_coeff = %s\n", buf);
+  //memset(buf, 0, sizeof(buf));
 
-  if (rpm_control)
-    puts("[PWMInterface] RPM Control Enabled");
-  else
-  {
-    sprintf(buf, "%0.2f", (double)voltage_coeff);
-    printf("[PWMInterface] voltage_coeff = %s\n", buf);
-    memset(buf, 0, sizeof(buf));
-  }
+  //sprintf(buf, "%0.2f", (double)voltage_coeff);
+  //printf("[PWMInterface] voltage_coeff = %s\n", buf);
+  //memset(buf, 0, sizeof(buf));
 
-  sprintf(buf, "%0.2f", (double)rpm_coeff);
-  printf("[PWMInterface] rpm_coeff = %s\n", buf);
-  memset(buf, 0, sizeof(buf));
-
-  sprintf(buf, "%0.2f", (double)affine_coeff);
-  printf("[PWMInterface] affine_coeff = %s\n", buf);
-  memset(buf, 0, sizeof(buf));
+  //sprintf(buf, "%0.2f", (double)affine_coeff);
+  //printf("[PWMInterface] affine_coeff = %s\n", buf);
+  //memset(buf, 0, sizeof(buf));
 }
 
 bool PWMInterface::openDevice()
